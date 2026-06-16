@@ -82,7 +82,7 @@ TIMER_INTERVAL_SEC = 0.5
 
 # Cooldown time in seconds after trigger fires
 # Allows DeepFace analysis on CPU to complete
-COOLDOWN_TIME_SEC = 20.0
+COOLDOWN_TIME_SEC = 60.0
 
 # Gaze smoothing buffer size in frames
 # Based on Cheng et al. (2026) and

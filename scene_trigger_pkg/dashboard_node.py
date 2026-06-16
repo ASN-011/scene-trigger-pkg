@@ -207,6 +207,10 @@ HTML = """
                 Camera + YOLO
             </div>
             <div class="pipe-arrow">→</div>
+            <div class="pipe-step {{ 'active' if data.person_detected else '' }}">
+                SAM2 Tracking (ID: {{ data.person_id }})
+            </div>
+            <div class="pipe-arrow">→</div>
             <div class="pipe-step {{ 'active' if data.face_detected else '' }}">
                 RetinaFace
             </div>
@@ -216,7 +220,7 @@ HTML = """
             </div>
             <div class="pipe-arrow">→</div>
             <div class="pipe-step {{ 'active' if data.persistence_counter > 0 else '' }}">
-                Persistence Counter
+                Persistence Timer
             </div>
             <div class="pipe-arrow">→</div>
             <div class="pipe-step {{ 'active' if data.trigger_fired else '' }}">
@@ -234,12 +238,15 @@ HTML = """
 
         <!-- Person Detection -->
         <div class="card">
-            <h2>Person Detection (YOLO)</h2>
+            <h2>Person Detection (YOLO + SAM2)</h2>
             {% if data.person_detected %}
                 <span class="status-dot green"></span>
                 <span style="color: #00c9a7; font-weight: bold;">Person Detected</span>
                 <div class="value green-text">{{ data.yolo_confidence }}%</div>
                 <div class="label">Confidence</div>
+                <div class="label" style="margin-top: 6px;">
+                    SAM2 ID: <span style="color: #1a8fe3;">{{ data.person_id }}</span>
+                </div>
             {% else %}
                 <span class="status-dot red"></span>
                 <span style="color: #e74c3c;">No Person</span>
@@ -282,22 +289,19 @@ HTML = """
             {% endif %}
         </div>
 
-        <!-- Persistence Counter -->
+        <!-- Persistence Timer -->
         <div class="card">
-            <h2>Persistence Counter</h2>
+            <h2>Persistence Timer</h2>
             {% if data.cooldown_active %}
                 <span class="status-dot yellow"></span>
                 <span style="color: #f5a623; font-weight: bold;">Cooldown Active</span>
-                <div class="value yellow-text">{{ data.cooldown_counter }}</div>
-                <div class="label">frames remaining</div>
+                <div class="value yellow-text">{{ data.cooldown_remaining }}s</div>
+                <div class="label">remaining</div>
             {% else %}
-                <div class="value">{{ data.persistence_counter }}/{{ data.persistence_threshold }}</div>
-                <div class="label">
-                    ~{{ (data.persistence_counter / 3.0) | round(1) }}s
-                    / ~{{ (data.persistence_threshold / 3.0) | round(1) }}s
-                </div>
+                <div class="value">{{ data.persistence_counter }}s / {{ data.persistence_threshold }}s</div>
+                <div class="label">Looking duration</div>
                 <div class="progress-bar">
-                    <div class="progress-fill" style="width: {{ (data.persistence_counter / data.persistence_threshold * 100) | int }}%;"></div>
+                    <div class="progress-fill" style="width: {{ [((data.persistence_counter / data.persistence_threshold) * 100) | int, 100] | min }}%;"></div>
                 </div>
             {% endif %}
         </div>
@@ -363,9 +367,9 @@ HTML = """
             <div class="value green-text">{{ data.total_triggers }}</div>
         </div>
         <div class="card" style="text-align: center;">
-            <h2>YOLO Threshold</h2>
-            <div class="value">{{ data.persistence_threshold }} frames</div>
-            <div class="label">~1.0 second at 3fps</div>
+            <h2>Persistence Threshold</h2>
+            <div class="value">{{ data.persistence_threshold }}s</div>
+            <div class="label">Lavit Nicora et al. 2024</div>
         </div>
         <div class="card" style="text-align: center;">
             <h2>Gaze Threshold</h2>
@@ -395,15 +399,16 @@ HTML = """
 state = {
     "timestamp": "--",
     "person_detected": False,
+    "person_id": "--",
     "yolo_confidence": 0.0,
     "face_detected": False,
     "looking_at_camera": False,
     "pitch_deg": 0.0,
     "yaw_deg": 0.0,
-    "persistence_counter": 0,
-    "persistence_threshold": 3,
+    "persistence_counter": 0.0,
+    "persistence_threshold": 1.0,
     "cooldown_active": False,
-    "cooldown_counter": 0,
+    "cooldown_remaining": 0,
     "trigger_fired": False,
     "scene_id": 0,
     "age": "--",
@@ -423,7 +428,6 @@ def add_log(message, log_type="normal"):
         "type": log_type
     }
     state["log"].insert(0, entry)
-    # Keep only last 20 entries
     state["log"] = state["log"][:20]
 
 
@@ -442,7 +446,6 @@ class DashboardNode(Node):
     def __init__(self):
         super().__init__('dashboard_node')
 
-        # Subscribe to dashboard updates from trigger node
         self.create_subscription(
             String,
             '/dashboard_update',
@@ -462,17 +465,12 @@ class DashboardNode(Node):
             state.update(data)
             state["timestamp"] = datetime.now().strftime("%H:%M:%S")
 
-            # Add to log if trigger fired
             if data.get("trigger_fired"):
                 state["total_triggers"] += 1
                 add_log(
                     f'Trigger fired! Scene ID: {data.get("scene_id", -1)}',
                     "trigger"
                 )
-            elif data.get("person_detected") and not data.get("looking_at_camera"):
-                pass  # Don't log every frame
-            elif data.get("person_detected") and data.get("looking_at_camera"):
-                pass  # Don't log every frame
 
         except Exception as e:
             self.get_logger().error(f'Dashboard update error: {e}')
@@ -480,14 +478,13 @@ class DashboardNode(Node):
 
 def run_flask():
     """Run Flask web server in background thread."""
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    app.run(host='0.0.0.0', port=5001, debug=False, use_reloader=False)
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = DashboardNode()
 
-    # Start Flask in background thread
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
