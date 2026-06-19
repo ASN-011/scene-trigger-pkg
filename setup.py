@@ -27,6 +27,8 @@ setup(
             'scene_trigger_node = scene_trigger_pkg.scene_trigger_node:main',
             'camera_publisher = scene_trigger_pkg.camera_publisher:main',
             'dashboard_node = scene_trigger_pkg.dashboard_node:main',
+            'data_collector = scene_trigger_pkg.data_collector:main',
+            'generate_graphs = scene_trigger_pkg.generate_graphs:main',
     ],
     },
 )
